@@ -3,9 +3,10 @@ import learning.model as model
 import torch
 import learning.env as env
 from collections import deque
+import random
 
 MAX_MEMORY = 50000
-N_OBSERVATIONS = 50000
+N_OBSERVATIONS = 10000
 DECAY_EPSILON = 0.9999
 SATURATED_EPSILON = 0.0001
 BATCH_SIZE = 32
@@ -25,6 +26,7 @@ class QAgent:
 
         # define the model
         self.q_model = model.ConvNet(env.action_space)
+        self.q_model.cuda()
         self.optimizer = torch.optim.Adam(self.q_model.parameters(), lr=0.001)
 
         # define the memory
@@ -52,9 +54,9 @@ class QAgent:
             return action
         else:
             state = state[np.newaxis, :]
-            state = torch.from_numpy(state).float()
+            state = torch.from_numpy(state).float().cuda()
             q_values = self.q_model(state)
-            q_values = q_values.detach().numpy()[0]
+            q_values = q_values.cpu().detach().numpy()[0]
             index = np.argmax(q_values)
             action = np.zeros(2)
             action[index] = 1
@@ -73,7 +75,7 @@ class QAgent:
             action_t = self.act(state_t)
             frame_t_plus1, reward_t, done_t = self.env.step(action_t)
             state_t_plus1 = self.get_state(frame_t_plus1, state_t)
-            self.memory.append((self.state_0, action_t, reward_t, state_t_plus1, done_t))
+            self.update_memory(state_t, action_t, reward_t, state_t_plus1, done_t)
             state_t = state_t_plus1
 
         print("Learning...")
@@ -87,14 +89,14 @@ class QAgent:
                 self.update_memory(state_t, action_t, reward_t, state_t_plus1, done_t)
 
                 # sample a batch from the memory
-                minibatch = self.rng.choice(self.memory, BATCH_SIZE)
-                state_t_batch = torch.from_numpy(np.array([x[0] for x in minibatch])).float()
-                reward_t_batch = torch.from_numpy(np.array([x[2] for x in minibatch])).float()
-                state_t_plus1_batch = torch.from_numpy(np.array([x[3] for x in minibatch])).float()
-                done_t_batch = torch.from_numpy(np.array([x[4] for x in minibatch])).float()
+                minibatch = random.sample(self.memory, BATCH_SIZE)
+                state_t_batch = torch.from_numpy(np.array([x[0] for x in minibatch])).float().cuda()
+                reward_t_batch = np.array([x[2] for x in minibatch])
+                state_t_plus1_batch = torch.from_numpy(np.array([x[3] for x in minibatch])).float().cuda()
+                done_t_batch = torch.from_numpy(np.array([x[4] for x in minibatch])).float().cuda()
 
                 # calculate the q values for future states
-                q_values_t_plus1_batch = self.q_model(state_t_plus1_batch)
+                q_values_t_plus1_batch = self.q_model(state_t_plus1_batch).cpu().detach().numpy()
 
                 # calculate expected reward
                 expected_reward = np.array([])
@@ -106,13 +108,14 @@ class QAgent:
 
                 # perform gradient descent
                 self.optimizer.zero_grad()
-                q_values_t_batch = self.q_model(state_t_batch)
-                loss = torch.nn.MSELoss(q_values_t_batch, expected_reward)
+                q_values_t_batch = self.q_model(state_t_batch).mean(dim=1)
+                expected_reward = torch.from_numpy(expected_reward).float().cuda()
+                loss = torch.nn.functional.mse_loss(q_values_t_batch, expected_reward)
                 loss.backward()
                 self.optimizer.step()
 
                 # record the loss
-                epoch_loss.append(loss)
+                epoch_loss.append(loss.cpu().detach().numpy())
                 
                 # decay epsilon
                 self.epsilon = max(SATURATED_EPSILON, self.epsilon * DECAY_EPSILON)
