@@ -9,4 +9,4 @@ print(f"ID of current CUDA device: {torch.cuda.current_device()}")
 print(f"Name of current CUDA device: {torch.cuda.get_device_name(cuda_id)}")
 
 agent = agent.QAgent(env.Environment())
-agent.learn(epochs=100, steps=100)
+agent.learn(epochs=1000, steps=1000)

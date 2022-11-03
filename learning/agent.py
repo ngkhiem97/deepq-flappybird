@@ -4,6 +4,7 @@ import torch
 import learning.env as env
 from collections import deque
 import random
+from tqdm import tqdm
 
 MAX_MEMORY = 50000
 N_OBSERVATIONS = 500
@@ -71,7 +72,7 @@ class QAgent:
         state_t = self.state_0
         # observe the environment
         print("Observing the environment...")
-        for i in range(N_OBSERVATIONS):
+        for i in tqdm(range(N_OBSERVATIONS)):
             action_t = self.act(state_t)
             frame_t_plus1, reward_t, done_t = self.env.step(action_t)
             state_t_plus1 = self.get_state(frame_t_plus1, state_t)
@@ -91,6 +92,7 @@ class QAgent:
                 # sample a batch from the memory
                 minibatch = random.sample(self.memory, BATCH_SIZE)
                 state_t_batch = torch.from_numpy(np.array([x[0] for x in minibatch])).float().cuda()
+                action_t_batch = torch.from_numpy(np.array([x[1] for x in minibatch])).float().cuda()
                 reward_t_batch = np.array([x[2] for x in minibatch])
                 state_t_plus1_batch = torch.from_numpy(np.array([x[3] for x in minibatch])).float().cuda()
                 done_t_batch = torch.from_numpy(np.array([x[4] for x in minibatch])).float().cuda()
@@ -108,9 +110,10 @@ class QAgent:
 
                 # perform gradient descent
                 self.optimizer.zero_grad()
-                q_values_t_batch = self.q_model(state_t_batch).mean(dim=1)
+                q_values_t_batch = self.q_model(state_t_batch)
                 expected_reward = torch.from_numpy(expected_reward).float().cuda()
-                loss = torch.nn.functional.mse_loss(q_values_t_batch, expected_reward)
+                readout_action_t_batch = torch.sum(q_values_t_batch * action_t_batch, dim=1)
+                loss = torch.nn.functional.mse_loss(readout_action_t_batch, expected_reward)
                 loss.backward()
                 self.optimizer.step()
 
