@@ -7,16 +7,17 @@ import random
 from tqdm import tqdm
 
 MAX_MEMORY = 50000
-N_OBSERVATIONS = 500
+N_OBSERVATIONS = 2000
 DECAY_EPSILON = 0.9999
 SATURATED_EPSILON = 0.0001
 BATCH_SIZE = 32
 
 class QAgent:
-    def __init__(self, env: env.Environment, gamma=0.9, epsilon=0.1):
+    def __init__(self, env: env.Environment, gamma=0.9, epsilon=0.1, device="cpu"):
         super()
         # define environment
         self.env = env
+        self.device = device
 
         # define the constants
         self.gamma = gamma
@@ -27,7 +28,7 @@ class QAgent:
 
         # define the model
         self.q_model = model.ConvNet(env.action_space)
-        self.q_model.cuda()
+        self.q_model.to(self.device)
         self.optimizer = torch.optim.Adam(self.q_model.parameters(), lr=0.001)
 
         # define the memory
@@ -55,7 +56,7 @@ class QAgent:
             return action
         else:
             state = state[np.newaxis, :]
-            state = torch.from_numpy(state).float().cuda()
+            state = torch.from_numpy(state).float().to(self.device)
             q_values = self.q_model(state)
             q_values = q_values.cpu().detach().numpy()[0]
             index = np.argmax(q_values)
@@ -68,7 +69,7 @@ class QAgent:
         if len(self.memory) > MAX_MEMORY:
             self.memory.popleft()
 
-    def learn(self, epochs=100, steps=100):
+    def learn(self, epochs=100):
         state_t = self.state_0
         # observe the environment
         print("Observing the environment...")
@@ -83,19 +84,23 @@ class QAgent:
         # learn from the environment
         for epoch in range(epochs):
             epoch_loss = []
-            for step in range(steps):
+            reward = []
+            while True:
                 # perform an action
+                exit = False
                 action_t = self.act(state_t)
                 frame_t_plus1, reward_t, done_t = self.env.step(action_t)
                 self.update_memory(state_t, action_t, reward_t, state_t_plus1, done_t)
+                if done_t:
+                    exit = True
 
                 # sample a batch from the memory
                 minibatch = random.sample(self.memory, BATCH_SIZE)
-                state_t_batch = torch.from_numpy(np.array([x[0] for x in minibatch])).float().cuda()
-                action_t_batch = torch.from_numpy(np.array([x[1] for x in minibatch])).float().cuda()
+                state_t_batch = torch.from_numpy(np.array([x[0] for x in minibatch])).float().to(self.device)
+                action_t_batch = torch.from_numpy(np.array([x[1] for x in minibatch])).float().to(self.device)
                 reward_t_batch = np.array([x[2] for x in minibatch])
-                state_t_plus1_batch = torch.from_numpy(np.array([x[3] for x in minibatch])).float().cuda()
-                done_t_batch = torch.from_numpy(np.array([x[4] for x in minibatch])).float().cuda()
+                state_t_plus1_batch = torch.from_numpy(np.array([x[3] for x in minibatch])).float().to(self.device)
+                done_t_batch = torch.from_numpy(np.array([x[4] for x in minibatch])).float().to(self.device)
 
                 # calculate the q values for future states
                 q_values_t_plus1_batch = self.q_model(state_t_plus1_batch).cpu().detach().numpy()
@@ -111,19 +116,23 @@ class QAgent:
                 # perform gradient descent
                 self.optimizer.zero_grad()
                 q_values_t_batch = self.q_model(state_t_batch)
-                expected_reward = torch.from_numpy(expected_reward).float().cuda()
+                expected_reward = torch.from_numpy(expected_reward).float().to(self.device)
                 readout_action_t_batch = torch.sum(q_values_t_batch * action_t_batch, dim=1)
                 loss = torch.nn.functional.mse_loss(readout_action_t_batch, expected_reward)
                 loss.backward()
                 self.optimizer.step()
 
-                # record the loss
+                # record the loss and reward
                 epoch_loss.append(loss.cpu().detach().numpy())
+                reward.append(reward_t)
                 
                 # decay epsilon
                 self.epsilon = max(SATURATED_EPSILON, self.epsilon * DECAY_EPSILON)
+
+                if exit:
+                    break
             
             # print the loss
-            print("Epoch: {}, Loss: {}".format(epoch, np.mean(epoch_loss)))
+            print("Epoch: {}, Loss: {}, Reward: {}".format(epoch, np.mean(epoch_loss), np.mean(reward)))
             
         
