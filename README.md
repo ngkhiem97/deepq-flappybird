@@ -5,12 +5,21 @@ Deep Q Networks (DQNs) are a type of artificial neural network that combines the
 Please see below the procedure on how to run the Python program to train the agent as well as how to run the demonstration of the network playing the video game.
 
 ## Requirements
+
+This repository requires these following libraries:
+
 ```
 numpy==1.19.5
 opencv_python==4.6.0.66
 pygame==2.1.0
 torch==1.13.0
 tqdm==4.60.0
+```
+
+To simply install, run:
+
+```bash
+pip install requirememts.txt
 ```
 
 ## How to run the program
