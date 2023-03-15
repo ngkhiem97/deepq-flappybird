@@ -24,6 +24,8 @@ pip install requirememts.txt
 
 ## How to run the program
 
+The following starts the environment and trains the agent. The resulted model is saved.
+
 ### Training the agent
 ```
 python3 learn.py
