@@ -90,6 +90,7 @@ class QAgent:
                 exit = False
                 action_t = self.act(state_t)
                 frame_t_plus1, reward_t, done_t = self.env.step(action_t)
+                state_t_plus1 = self.get_state(frame_t_plus1, state_t)
                 self.update_memory(state_t, action_t, reward_t, state_t_plus1, done_t)
                 if done_t:
                     exit = True
@@ -117,7 +118,7 @@ class QAgent:
                 self.optimizer.zero_grad()
                 q_values_t_batch = self.q_model(state_t_batch)
                 expected_reward = torch.from_numpy(expected_reward).float().to(self.device)
-                readout_action_t_batch = torch.sum(q_values_t_batch * action_t_batch, dim=1)
+                readout_action_t_batch = torch.sum(torch.mul(q_values_t_batch, action_t_batch), dim=1)
                 loss = torch.nn.functional.mse_loss(readout_action_t_batch, expected_reward)
                 loss.backward()
                 self.optimizer.step()
